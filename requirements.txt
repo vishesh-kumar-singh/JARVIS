@@ -1,0 +1,13 @@
+google-auth
+google-auth-oauthlib
+google-api-python-client
+langchain
+langchain-community
+langchain-huggingface
+langchain-google-genai
+dateparser
+pytz
+docx
+PyPDF2
+tqdm
+mem0ai

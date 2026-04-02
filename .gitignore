@@ -1,0 +1,10 @@
+.env
+token.json
+__pycache__
+services/__pycache__
+Temporary
+conversation_context.json
+jarvis_notes.json
+user_persona.json
+vosk*
+credentials.json

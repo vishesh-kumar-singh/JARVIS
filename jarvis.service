@@ -1,0 +1,18 @@
+[Unit]
+Description=J.A.R.V.I.S. Background Assistant Event Loop
+After=network.target network-online.target
+
+[Service]
+Type=simple
+User=vishesh
+WorkingDirectory=/home/vishesh/My Stuff/BCS-2025-26/Inter-IIT/Google Agent
+ExecStart="/home/vishesh/My Stuff/BCS-2025-26/Inter-IIT/Google Agent/start_jarvis.sh"
+Restart=always
+RestartSec=5
+# Allow microphone access (PulseAudio/ALSA) if running as service
+Environment="PULSE_SERVER=unix:/run/user/1000/pulse/native"
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/vishesh/.Xauthority"
+
+[Install]
+WantedBy=default.target
