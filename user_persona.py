@@ -64,14 +64,14 @@ Here is the RECENT conversation log:
 {conversation_log}
 ```
 
-Analyze the conversation and output a JSON object with ONLY the fields that need to be UPDATED or ADDED.
+Analyze the conversation and output a JSON object with ONLY the fields that need to be UPDATED, ADDED, or REMOVED.
 Rules:
 1. Do NOT repeat information already in the existing profile unless you are correcting it.
-2. For list fields (like interests.music), output the NEW items to ADD, not the full list.
+2. For list fields (like interests.music), you can add or remove items by outputting a dictionary: {{"add": ["new_item"], "remove": ["old_item"]}}.
 3. For string fields, only include them if you have a NEW or CORRECTED value.
 4. If you learn nothing new, output an empty JSON object: {{}}
-5. Include a "raw_observations" list with any interesting free-form insights.
-6. Be specific and factual. Don't speculate wildly.
+5. Actively monitor for conflicting preferences (e.g. if the user says they no longer like X, utilize the "remove" operator).
+6. Be highly selective. A casual web search or single passing conversation (e.g., asking about diet, health, or random trivia) does NOT constitute an "academic_topic", "project", or "hobby". Only record clear, established factual interests.
 
 Output ONLY valid JSON, no markdown code fences, no explanation."""
 
@@ -106,10 +106,20 @@ class UserPersona:
                 base[key] = value
             elif isinstance(base[key], dict) and isinstance(value, dict):
                 self._deep_merge(base[key], value)
-            elif isinstance(base[key], list) and isinstance(value, list):
-                for item in value:
-                    if item not in base[key]:
-                        base[key].append(item)
+            elif isinstance(base[key], list):
+                if isinstance(value, dict):
+                    to_add = value.get("add", [])
+                    to_remove = value.get("remove", [])
+                    for item in to_add:
+                        if item not in base[key]:
+                            base[key].append(item)
+                    for item in to_remove:
+                        if item in base[key]:
+                            base[key].remove(item)
+                elif isinstance(value, list):
+                    for item in value:
+                        if item not in base[key]:
+                            base[key].append(item)
             elif value is not None:
                 base[key] = value
 
@@ -178,33 +188,20 @@ class UserPersona:
         with self._lock:
             self._load()
 
+        core_keys = {"personal", "communication_style", "preferences", "behavioral_patterns", "work_study_habits"}
+
+        lines = ["\nIMPORTANT - What You Know About The User (Core Identity):"]
+        lines.append("Use this to personalize your tone and general knowledge. For specific hobbies, topics, or projects, actively use the search_persona tool.")
+
         has_data = False
         for section_key, section_val in self.persona.items():
-            if section_key in ("last_updated",):
-                continue
-            if isinstance(section_val, dict):
-                for v in section_val.values():
-                    if v and v != [] and v is not None:
-                        has_data = True
-                        break
-            elif isinstance(section_val, list) and section_val:
-                has_data = True
-            if has_data:
-                break
-
-        if not has_data:
-            return ""
-
-        lines = ["\nIMPORTANT - What You Know About The User (Learned Profile):"]
-        lines.append("Use this profile to personalize your responses. Anticipate preferences when possible.")
-
-        for section_key, section_val in self.persona.items():
-            if section_key in ("last_updated", "raw_observations"):
+            if section_key not in core_keys:
                 continue
             if isinstance(section_val, dict):
                 section_lines = []
                 for k, v in section_val.items():
                     if v and v != [] and v is not None:
+                        has_data = True
                         if isinstance(v, list):
                             section_lines.append(f"  - {k.replace('_', ' ').title()}: {', '.join(str(i) for i in v)}")
                         else:
@@ -213,10 +210,33 @@ class UserPersona:
                     lines.append(f"\n{section_key.replace('_', ' ').title()}:")
                     lines.extend(section_lines)
 
-        observations = self.persona.get("raw_observations", [])
-        if observations:
-            lines.append("\nOther Observations:")
-            for obs in observations[-10:]:
-                lines.append(f"  - {obs}")
+        if not has_data:
+            return ""
+
+        return "\n".join(lines)
+
+    def get_supplemental_text(self) -> str:
+        with self._lock:
+            self._load()
+
+        lines = []
+        for section_key, section_val in self.persona.items():
+            if section_key in {"personal", "communication_style", "preferences", "behavioral_patterns", "work_study_habits", "last_updated"}:
+                continue
+                
+            if isinstance(section_val, dict):
+                for k, v in section_val.items():
+                    if v and v != [] and v is not None:
+                        if isinstance(v, list):
+                            lines.append(f"{section_key.title()} - {k.title()}: {', '.join(str(i) for i in v)}")
+                        else:
+                            lines.append(f"{section_key.title()} - {k.title()}: {v}")
+            elif isinstance(section_val, list):
+                if section_key == "raw_observations":
+                    for obs in section_val:
+                        lines.append(f"Observation: {obs}")
+                else:
+                    if section_val:
+                        lines.append(f"{section_key.title()}: {', '.join(str(i) for i in section_val)}")
 
         return "\n".join(lines)
