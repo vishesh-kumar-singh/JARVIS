@@ -18,6 +18,7 @@ from services.iitk_mail import IITKMail
 from services.drive import GoogleDrive
 from services.web_search import WebSearch, scrape_page
 from notepad import Notepad
+from persona_rag import persona_rag_service
 from datetime import datetime, timedelta
 import pytz
 import asyncio
@@ -129,6 +130,11 @@ async def note_list(category: str = "") -> str:
 async def note_search(query: str) -> str:
     """Search through saved notes by keyword."""
     return str(await asyncio.to_thread(notepad_service.search_notes, query))
+
+@mcp.tool()
+async def search_persona(query: str) -> str:
+    """Search J.A.R.V.I.S.'s long-term memory for the user's specific hobbies, interests, academic topics, or past projects."""
+    return str(await asyncio.to_thread(persona_rag_service.search, query))
 
 @mcp.tool()
 async def note_done(note_id: int) -> str:
