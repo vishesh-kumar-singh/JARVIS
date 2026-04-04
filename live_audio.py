@@ -247,7 +247,6 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
                     async with client.aio.live.connect(model=MODEL, config=config) as live_session:
                         print("J.A.R.V.I.S. is online.", flush=True)
                         reconnect_delay = 5  # Reset backoff on successful connection
-                        stm.add("system_event", "J.A.R.V.I.S. connected to Live API.")
 
                         pya = pyaudio.PyAudio()
                         out_stream = pya.open(
@@ -291,7 +290,6 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
                                     except asyncio.TimeoutError:
                                         continue
                                     print(f"\n[Injecting System Event: {event_text[:80]}...]", file=sys.stderr)
-                                    stm.add("system_event", event_text[:200])
                                     await live_session.send_realtime_input(text=event_text)
                                     system_event_queue.task_done()
                             except asyncio.CancelledError:
@@ -394,7 +392,10 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
                                                     id=fc.id,
                                                 ))
                                                 # Save tool call to short-term memory
-                                                stm.add("tool", f"{name}({dict(fc.args) if fc.args else {}}) → {str(result)[:200]}")
+                                                if name in ["iitk_mail_unread", "gmail_read", "gmail_search", "web_search", "iitk_mail_get"]:
+                                                    stm.add("tool", f"{name}({dict(fc.args) if fc.args else {}}) → [Content Omitted for Privacy]")
+                                                else:
+                                                    stm.add("tool", f"{name}({dict(fc.args) if fc.args else {}}) → {str(result)[:200]}")
                                             if bundled_responses:
                                                 await live_session.send_tool_response(
                                                     function_responses=bundled_responses
@@ -421,7 +422,6 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
                                 pass
                             except Exception as e:
                                 print(f"\n[Receive error: {e}. Reconnecting...]", file=sys.stderr)
-                                stm.add("system_event", f"WebSocket disconnected: {e}")
                                 should_reconnect.set()
                         
                         # Monitor task: waits for reconnect signal and cancels all tasks
@@ -467,7 +467,6 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
 
                 except Exception as e:
                     print(f"\n[Live API connection failed: {e}]", file=sys.stderr)
-                    stm.add("system_event", f"Connection failed: {e}")
                 
                 # Exponential backoff before reconnecting
                 print(f"[Reconnecting in {reconnect_delay}s...]", file=sys.stderr)
