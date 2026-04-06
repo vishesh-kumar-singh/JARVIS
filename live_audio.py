@@ -9,9 +9,27 @@ Key Components:
  - Dynamic tool binding via Model Context Protocol (MCP Server).
  - Parallel background tasks for email triaging & Persona extraction.
 """
-import asyncio
+import threading
 import sys
 import os
+
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_state.json")
+
+def load_state() -> dict:
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return __import__('json').load(f)
+        except Exception: pass
+    return {"active": False, "clean": True}
+
+def save_state(active: bool, clean: bool = False):
+    try:
+        with open(STATE_FILE, "w") as f:
+            __import__('json').dump({"active": active, "clean": clean}, f)
+    except Exception: pass
+
+import asyncio
 import pyaudio
 import dotenv
 import json
@@ -100,6 +118,7 @@ async def handle_tool_call(fc, tools_dict, jarvis_active=None):
     if name == "go_to_standby":
         if jarvis_active:
             jarvis_active.clear()
+            save_state(False, clean=False)
             print("\n[J.A.R.V.I.S. Returning to Standby via Tool]", file=sys.stderr)
             # Trigger persona reflection in background when going to standby
             conversation_log = stm.get_context(max_entries=30)
@@ -245,6 +264,25 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
             reconnect_delay = 5  # seconds, grows with exponential backoff
             MAX_RECONNECT_DELAY = 60
             
+            # Persistent State Initialization
+            state = load_state()
+            jarvis_active = asyncio.Event()
+            system_event_queue = asyncio.Queue()
+            
+            if state.get("active", False):
+                jarvis_active.set()
+            else:
+                jarvis_active.clear()
+                
+            if state.get("clean", True):
+                if jarvis_active.is_set():
+                    system_event_queue.put_nowait("[SYSTEM EVENT: You just booted up from a shutdown. Greet the user warmly and wittily.]")
+            else:
+                if jarvis_active.is_set():
+                    system_event_queue.put_nowait("[SYSTEM EVENT: Critical failure recovery. The system just crashed and restarted while we were talking. Briefly apologize for the crash.]")
+            
+            save_state(jarvis_active.is_set(), clean=False)
+
             while True:  # Reconnection loop
                 try:
                     async with client.aio.live.connect(model=MODEL, config=config) as live_session:
@@ -267,15 +305,6 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
                         executor = ThreadPoolExecutor(max_workers=4)
                         # Flag: mic is muted while model is speaking to avoid echo feedback
                         model_speaking = asyncio.Event()
-                        
-                        # Flag: JARVIS starts ACTIVE on fresh boot so it greets the user
-                        jarvis_active = asyncio.Event()
-                        jarvis_active.set()
-                        
-                        system_event_queue = asyncio.Queue()
-                        
-                        # Queue an initial greeting so J.A.R.V.I.S. greets the user on startup
-                        system_event_queue.put_nowait("[SYSTEM EVENT: You just booted up. Greet the user warmly and wittily like J.A.R.V.I.S. would. Keep it brief — one or two sentences. Mention you're online and ready.]")
                         
                         # Reconnect signal: set by any task to trigger graceful reconnect
                         should_reconnect = asyncio.Event()
@@ -355,6 +384,7 @@ Respond conversationally. Be helpful, concise, and slightly witty like J.A.R.V.I
                                                     if "jarvis" in recognized_text.lower() or "make it happen" in recognized_text.lower() or "showtime" in recognized_text.lower():
                                                         print("\n[Wake Word Detected: J.A.R.V.I.S. Activated!]", file=sys.stderr)
                                                         jarvis_active.set()
+                                                        save_state(True, clean=False)
                                                         await system_event_queue.put("[SYSTEM EVENT: You were just woken up by your wake word. Briefly and wittily greet the user or confirm you are listening.]")
 
                                         if chunk_count > 0 and chunk_count % 50 == 1:
@@ -480,4 +510,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nDisconnected.")
+        print("\nShutdown via keyboard interrupt.")
+        try:
+            s = load_state()
+            save_state(s.get("active", False), clean=True)
+        except Exception: pass
